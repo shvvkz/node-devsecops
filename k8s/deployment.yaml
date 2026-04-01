@@ -1,21 +1,61 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: node-devsecops
+  name: devsecops-demo
+  namespace: devsecops
+  labels:
+    app: devsecops-demo
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: node-devsecops
+      app: devsecops-demo
   template:
     metadata:
       labels:
-        app: node-devsecops
+        app: devsecops-demo
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
-        - name: node-devsecops
-          image: node-devsecops:latest
-          ports:
-            - containerPort: 3000
+        - name: devsecops-demo
+          image: devsecops-demo:local
+          imagePullPolicy: IfNotPresent
           securityContext:
-            runAsUser: 1000
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - containerPort: 5000
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devsecops
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devsecops-demo-service
+  namespace: devsecops
+spec:
+  selector:
+    app: devsecops-demo
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
+  type: ClusterIP

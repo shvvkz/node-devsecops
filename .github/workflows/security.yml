@@ -1,4 +1,4 @@
-name: DevSecOps CI
+name: DevSecOps Pipeline Node
 
 on:
   push:
@@ -10,26 +10,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: 1. Clone repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: 2. Setup Node.js environment
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Install dependencies
+      - name: 3. Install Node dependencies
         run: npm install
 
-      - name: Install yamllint
+      - name: 4. Install YAML linter
         run: |
           python3 -m pip install --upgrade pip
           pip3 install yamllint
 
-      - name: Lint Kubernetes YAML
+      - name: 5. Validate Kubernetes YAML
         run: yamllint k8s/deployment.yaml
 
-      - name: Install Conftest
+      - name: 6. Install Conftest (OPA policies)
         run: |
           CONFTEST_VERSION=0.67.1
           curl -L "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" -o /tmp/conftest.tar.gz
@@ -37,10 +37,10 @@ jobs:
           sudo mv /tmp/conftest /usr/local/bin/conftest
           sudo chmod +x /usr/local/bin/conftest
 
-      - name: Run Conftest policy checks
+      - name: 7. Run security policy checks (Conftest)
         run: conftest test k8s/deployment.yaml --policy policy
 
-      - name: Install Trivy
+      - name: 8. Install Trivy scanner
         run: |
           sudo apt-get update
           sudo apt-get install -y wget gnupg lsb-release
@@ -49,11 +49,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y trivy
 
-      - name: Run Trivy filesystem scan
-        run: trivy fs --scanners vuln,secret,misconfig --exit-code 0 .
+      - name: 9. Run Trivy filesystem scan (export JSON)
+        run: trivy fs --scanners vuln,secret,misconfig --format json --output trivy-fs.json . || true
 
-      - name: Build Docker image
+      - name: 10. Build Docker image
         run: docker build -t node-devsecops:ci .
 
-      - name: Run Trivy image scan
-        run: trivy image --scanners vuln,secret,misconfig --exit-code 0 node-devsecops:ci
+      - name: 11. Run Trivy image scan (export JSON)
+        run: trivy image --scanners vuln,secret,misconfig --format json --output trivy-image.json node-devsecops:ci || true
+
+      - name: 12. Debug generated files
+        run: ls -lah
+
+      - name: 13. Upload filesystem scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-report
+          path: trivy-fs.json
+
+      - name: 14. Upload container image scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-report
+          path: trivy-image.json
